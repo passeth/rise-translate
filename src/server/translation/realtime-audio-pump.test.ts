@@ -69,10 +69,10 @@ describe("realtime audio pump", () => {
       session: { audio: { output: { language: "en" } } },
     });
     expect(sent[1]).toMatchObject({
-      type: "input_audio_buffer.append",
+      type: "session.input_audio_buffer.append",
       audio: expect.any(String),
     });
-    expect(sent.some((event) => event.type === "input_audio_buffer.commit")).toBe(false);
+    expect(sent.some((event) => event.type === "session.close")).toBe(false);
     expect([...publishFrame.mock.calls[0][0].data]).toEqual([10, 20]);
     expect(onTranscript).toHaveBeenCalledWith({
       type: "transcript",
@@ -112,7 +112,7 @@ describe("realtime audio pump", () => {
 
     acknowledgeSessionUpdate?.();
     await expect(task).resolves.toMatchObject({ inputFrames: 1 });
-    expect(sent[1]).toMatchObject({ type: "input_audio_buffer.append" });
+    expect(sent[1]).toMatchObject({ type: "session.input_audio_buffer.append" });
   });
 
   it("reports first output audio only once", async () => {
@@ -140,7 +140,7 @@ describe("realtime audio pump", () => {
     expect(onFirstOutputAudio).toHaveBeenCalledTimes(1);
   });
 
-  it("can manually commit the final source buffer for future non-VAD modes", async () => {
+  it("can explicitly close the translation session on source end", async () => {
     const sent: Record<string, unknown>[] = [];
     const connection: RealtimeJsonConnection = {
       sendJson: vi.fn(async (event) => {
@@ -157,10 +157,10 @@ describe("realtime audio pump", () => {
       targetLanguage: "en",
       sourceFrames: frames([frame([1])]),
       publishFrame: vi.fn(),
-      manualCommitOnSourceEnd: true,
+      closeSessionOnSourceEnd: true,
     });
 
-    expect(sent.at(-1)).toEqual({ type: "input_audio_buffer.commit" });
+    expect(sent.at(-1)).toEqual({ type: "session.close" });
   });
 
   it("stops forwarding source frames when the continuation guard turns false", async () => {
@@ -186,7 +186,7 @@ describe("realtime audio pump", () => {
       }),
     ).resolves.toMatchObject({ inputFrames: 1 });
 
-    expect(sent.filter((event) => event.type === "input_audio_buffer.append")).toHaveLength(1);
+    expect(sent.filter((event) => event.type === "session.input_audio_buffer.append")).toHaveLength(1);
   });
 
   it("fails fast when OpenAI sends an error event", async () => {
@@ -211,7 +211,7 @@ describe("realtime audio pump", () => {
     ).rejects.toThrow("Invalid audio format");
 
     expect(connection.close).toHaveBeenCalledTimes(1);
-    expect(sent.filter((event) => event.type === "input_audio_buffer.append").length).toBeLessThanOrEqual(1);
+    expect(sent.filter((event) => event.type === "session.input_audio_buffer.append").length).toBeLessThanOrEqual(1);
   });
 
   it("stops forwarding source frames when realtime output fails", async () => {
@@ -239,7 +239,7 @@ describe("realtime audio pump", () => {
       }),
     ).rejects.toThrow("output stream failed");
 
-    expect(sent.filter((event) => event.type === "input_audio_buffer.append").length).toBeLessThanOrEqual(1);
+    expect(sent.filter((event) => event.type === "session.input_audio_buffer.append").length).toBeLessThanOrEqual(1);
   });
 
   it("does not wait for another source frame after realtime output fails", async () => {
@@ -275,7 +275,7 @@ describe("realtime audio pump", () => {
     ).rejects.toThrow("output stream failed");
 
     expect(connection.close).toHaveBeenCalledTimes(1);
-    expect(sent.filter((event) => event.type === "input_audio_buffer.append").length).toBeLessThanOrEqual(1);
-    expect(sent.some((event) => event.type === "input_audio_buffer.commit")).toBe(false);
+    expect(sent.filter((event) => event.type === "session.input_audio_buffer.append").length).toBeLessThanOrEqual(1);
+    expect(sent.some((event) => event.type === "session.close")).toBe(false);
   });
 });

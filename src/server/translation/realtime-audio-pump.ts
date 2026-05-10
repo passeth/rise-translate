@@ -25,7 +25,7 @@ export type RealtimeTranslationPumpInput = {
   onReady?: () => void | Promise<void>;
   onTranscript?: (event: RealtimeTranscriptEvent) => void | Promise<void>;
   onFirstOutputAudio?: () => void | Promise<void>;
-  manualCommitOnSourceEnd?: boolean;
+  closeSessionOnSourceEnd?: boolean;
 };
 
 export type RealtimeTranslationPumpSummary = {
@@ -48,7 +48,7 @@ export async function pumpRealtimeTranslation({
   onReady,
   onTranscript,
   onFirstOutputAudio,
-  manualCommitOnSourceEnd = false,
+  closeSessionOnSourceEnd = false,
 }: RealtimeTranslationPumpInput): Promise<RealtimeTranslationPumpSummary> {
   const connection = await connect(request);
   const summary: RealtimeTranslationPumpSummary = {
@@ -115,17 +115,17 @@ export async function pumpRealtimeTranslation({
       }
       const frame = next.result.value;
       await connection.sendJson({
-        type: "input_audio_buffer.append",
+        type: "session.input_audio_buffer.append",
         audio: encodePcm16Frame(frame),
       });
       summary.inputFrames += 1;
     }
 
-    // With server VAD enabled, OpenAI commits speech turns automatically.
-    // Manual commits are kept opt-in for future non-VAD modes because committing
-    // an empty/already-auto-committed buffer can fail during normal shutdown.
-    if (!outputError && manualCommitOnSourceEnd) {
-      await connection.sendJson({ type: "input_audio_buffer.commit" });
+    // Realtime Translation WebSocket input events are namespaced under `session.*`.
+    // The endpoint does not accept `input_audio_buffer.commit`; server VAD commits
+    // speech turns automatically, and `session.close` is the supported shutdown event.
+    if (!outputError && closeSessionOnSourceEnd) {
+      await connection.sendJson({ type: "session.close" });
     }
   } finally {
     if (!sourceDone) {

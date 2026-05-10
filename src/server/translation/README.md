@@ -77,7 +77,7 @@ A production bridge must implement:
 3. Convert/resample frames to OpenAI Realtime's PCM16 24kHz mono boundary.
 4. Open the OpenAI Realtime Translation server WebSocket at `/v1/realtime/translations` with `Authorization: Bearer $OPENAI_API_KEY`.
 5. Send the same translation session shape used by the browser fallback (`gpt-realtime-translate`, source language, target language, far-field noise reduction, transcription enabled).
-6. Stream input audio with `input_audio_buffer.append`; server VAD commits speech turns automatically, so manual `input_audio_buffer.commit` is reserved for future non-VAD modes.
+6. Stream input audio with `session.input_audio_buffer.append`; server VAD commits speech turns automatically, and `session.close` is the supported shutdown event.
 7. Parse OpenAI audio/transcript deltas through `parseRealtimeEvent()` because docs/examples vary between current translation events and older realtime response event names.
 8. Publish translated PCM audio as `targetTrackName`, e.g. `translation-ko`, only after the first OpenAI audio frame arrives so clients do not suppress original audio for a silent interpreter track.
 9. Update `rt_translation_sessions` and emit `translation-status` LiveKit data events.
