@@ -202,6 +202,9 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
   const [audioMuted, setAudioMuted] = useState(false);
   const [sourceAudioVolume, setSourceAudioVolume] = useState(0.18);
   const [translatedAudioVolume, setTranslatedAudioVolume] = useState(1);
+  const [captions, setCaptions] = useState<CaptionEvent[]>([]);
+  const [captionFontSize, setCaptionFontSize] = useState<CaptionFontSize>("normal");
+  const [captionStatus, setCaptionStatus] = useState<"connected" | "delayed" | "reconnecting" | "unavailable">("delayed");
   const [speakingLanguage, setSpeakingLanguage] = useState<SupportedLanguageCode>(() =>
     resolveMetadataLanguage(room.localParticipant.metadata, "speakingLanguage", "ko"),
   );
@@ -267,6 +270,39 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
       window.removeEventListener("beforeunload", markLeft);
     };
   }, [publicToken, room]);
+
+  const loadCaptions = useCallback(async () => {
+    const response = await fetch(
+      `/api/public-meetings/${publicToken}/captions?listeningLanguage=${listeningLanguage}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) {
+      setCaptionStatus((current) =>
+        resolveCaptionConnectionStatus({ fetchOk: false, previousStatus: current, captionCount: captions.length }),
+      );
+      return;
+    }
+
+    const payload = (await response.json()) as { captions: CaptionEvent[] };
+    setCaptions(payload.captions);
+    setCaptionStatus((current) =>
+      resolveCaptionConnectionStatus({
+        fetchOk: true,
+        previousStatus: current,
+        captionCount: payload.captions.length,
+        newestCaptionAt: payload.captions.at(-1)?.startedAt,
+      }),
+    );
+  }, [captions.length, listeningLanguage, publicToken]);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => void loadCaptions(), 0);
+    const interval = window.setInterval(() => void loadCaptions(), 2000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, [loadCaptions]);
 
   const activeSharer = useMemo(() => {
     void refreshKey;
@@ -429,7 +465,7 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
 
   return (
     <main className="grid min-h-screen grid-rows-[1fr_auto] bg-slate-950 text-white lg:grid-cols-[1fr_360px] lg:grid-rows-[1fr_auto]">
-      <section className="min-h-0 p-4 lg:col-start-1">
+      <section className="relative min-h-0 p-4 lg:col-start-1">
         {activeSharer ? (
           <div className="mb-3 rounded-2xl border border-cyan-300/30 bg-cyan-300/10 px-4 py-3 text-sm text-cyan-50">
             {activeSharer.name ?? activeSharer.identity} is sharing their screen.
@@ -476,6 +512,7 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
             tileClassName="min-h-[180px]"
           />
         )}
+        <CaptionOverlay captions={captions} fontSize={captionFontSize} status={captionStatus} />
       </section>
 
       <aside className="min-h-0 border-t border-white/10 bg-slate-900/80 p-4 lg:col-start-2 lg:row-span-2 lg:border-l lg:border-t-0">
@@ -492,6 +529,10 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
           translationSnapshots={translationSnapshots}
           localMeetingMetadata={localMeetingMetadata}
           serverTranslatedSourceIdentities={serverTranslatedSourceIdentities}
+          captions={captions}
+          captionFontSize={captionFontSize}
+          captionStatus={captionStatus}
+          onCaptionFontSizeChange={setCaptionFontSize}
           onSpeakingLanguageChange={handleSpeakingLanguageChange}
           onListeningLanguageChange={handleListeningLanguageChange}
           onTranslationEnabledChange={setTranslationEnabled}
@@ -553,6 +594,38 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
         browserTranslationMixActive={browserTranslationMixActive}
       />
     </main>
+  );
+}
+
+function CaptionOverlay({
+  captions,
+  fontSize,
+  status,
+}: {
+  captions: CaptionEvent[];
+  fontSize: CaptionFontSize;
+  status: "connected" | "delayed" | "reconnecting" | "unavailable";
+}) {
+  const currentCaption = captions.at(-1);
+
+  if (!currentCaption) {
+    return null;
+  }
+
+  return (
+    <div className="pointer-events-none absolute inset-x-4 bottom-8 z-30 flex justify-center">
+      <div className="max-w-4xl rounded-3xl border border-white/15 bg-slate-950/90 px-5 py-4 text-center text-white shadow-2xl backdrop-blur">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200">
+          Captions {status} · {currentCaption.speakerName}
+        </p>
+        {currentCaption.sourceText ? (
+          <p className="mt-2 text-sm text-slate-300">{currentCaption.sourceText}</p>
+        ) : null}
+        <p className={`mt-1 font-semibold leading-snug ${CAPTION_FONT_SIZE_CLASS[fontSize]}`}>
+          {currentCaption.translatedText}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -965,6 +1038,10 @@ function RoomSidePanel({
   translationSnapshots,
   localMeetingMetadata,
   serverTranslatedSourceIdentities,
+  captions,
+  captionFontSize,
+  captionStatus,
+  onCaptionFontSizeChange,
   onSpeakingLanguageChange,
   onListeningLanguageChange,
   onTranslationEnabledChange,
@@ -984,6 +1061,10 @@ function RoomSidePanel({
   translationSnapshots: Record<string, ParticipantTranslationSnapshot>;
   localMeetingMetadata: MeetingParticipantMetadata;
   serverTranslatedSourceIdentities: Set<string>;
+  captions: CaptionEvent[];
+  captionFontSize: CaptionFontSize;
+  captionStatus: "connected" | "delayed" | "reconnecting" | "unavailable";
+  onCaptionFontSizeChange: (fontSize: CaptionFontSize) => void;
   onSpeakingLanguageChange: (language: SupportedLanguageCode) => void;
   onListeningLanguageChange: (language: SupportedLanguageCode) => void;
   onTranslationEnabledChange: (enabled: boolean) => void;
@@ -1037,7 +1118,15 @@ function RoomSidePanel({
           />
         ) : null}
         {activeTab === "chat" ? <ChatPanel publicToken={publicToken} /> : null}
-        {activeTab === "captions" ? <CaptionPanel publicToken={publicToken} listeningLanguage={listeningLanguage} /> : null}
+        {activeTab === "captions" ? (
+          <CaptionPanel
+            captions={captions}
+            fontSize={captionFontSize}
+            status={captionStatus}
+            listeningLanguage={listeningLanguage}
+            onFontSizeChange={onCaptionFontSizeChange}
+          />
+        ) : null}
         {activeTab === "participants" ? (
           <div className="space-y-3 overflow-auto pr-1">
             {visibleParticipants.map((participant) => {
@@ -1576,43 +1665,19 @@ function StatusPill({ label, status }: { label: string; status: string }) {
   );
 }
 
-function CaptionPanel({ publicToken, listeningLanguage }: { publicToken: string; listeningLanguage: SupportedLanguageCode }) {
-  const [captions, setCaptions] = useState<CaptionEvent[]>([]);
-  const [fontSize, setFontSize] = useState<CaptionFontSize>("normal");
-  const [status, setStatus] = useState<"connected" | "delayed" | "reconnecting" | "unavailable">("delayed");
-
-  const loadCaptions = useCallback(async () => {
-    const response = await fetch(
-      `/api/public-meetings/${publicToken}/captions?listeningLanguage=${listeningLanguage}`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) {
-      setStatus((current) =>
-        resolveCaptionConnectionStatus({ fetchOk: false, previousStatus: current, captionCount: captions.length }),
-      );
-      return;
-    }
-    const payload = (await response.json()) as { captions: CaptionEvent[] };
-    setCaptions(payload.captions);
-    setStatus((current) =>
-      resolveCaptionConnectionStatus({
-        fetchOk: true,
-        previousStatus: current,
-        captionCount: payload.captions.length,
-        newestCaptionAt: payload.captions.at(-1)?.startedAt,
-      }),
-    );
-  }, [captions.length, listeningLanguage, publicToken]);
-
-  useEffect(() => {
-    const initialTimer = window.setTimeout(() => void loadCaptions(), 0);
-    const interval = window.setInterval(() => void loadCaptions(), 3000);
-    return () => {
-      window.clearTimeout(initialTimer);
-      window.clearInterval(interval);
-    };
-  }, [loadCaptions]);
-
+function CaptionPanel({
+  captions,
+  fontSize,
+  status,
+  listeningLanguage,
+  onFontSizeChange,
+}: {
+  captions: CaptionEvent[];
+  fontSize: CaptionFontSize;
+  status: "connected" | "delayed" | "reconnecting" | "unavailable";
+  listeningLanguage: SupportedLanguageCode;
+  onFontSizeChange: (fontSize: CaptionFontSize) => void;
+}) {
   const currentCaption = captions.at(-1);
 
   return (
@@ -1643,7 +1708,7 @@ function CaptionPanel({ publicToken, listeningLanguage }: { publicToken: string;
           Font size
           <select
             value={fontSize}
-            onChange={(event) => setFontSize(event.target.value as CaptionFontSize)}
+            onChange={(event) => onFontSizeChange(event.target.value as CaptionFontSize)}
             className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm normal-case tracking-normal text-white"
           >
             <option value="small">Small</option>

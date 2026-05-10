@@ -4,11 +4,13 @@ import type { RealtimeTranscriptEvent } from "@/server/translation/openai-realti
 export type ServerTranscriptSegment = {
   sourceText: string;
   koreanText: string;
+  targetLanguage: SupportedLanguageCode;
+  translatedText: string;
 };
 
 export class ServerTranscriptBuffer {
   private sourceBuffer = "";
-  private koreanBuffer = "";
+  private outputBuffer = "";
 
   constructor(
     private readonly sourceLanguage: SupportedLanguageCode,
@@ -18,21 +20,31 @@ export class ServerTranscriptBuffer {
   push(event: RealtimeTranscriptEvent): ServerTranscriptSegment | null {
     if (isInputTranscript(event.rawType)) {
       this.sourceBuffer = appendTranscriptDelta(this.sourceBuffer, event.text);
-      if (this.sourceLanguage === "ko" && shouldFlushTranscript(this.sourceBuffer)) {
+      if (this.sourceLanguage === this.targetLanguage && shouldFlushTranscript(this.sourceBuffer)) {
         const sourceText = consumeText(() => this.sourceBuffer, (value) => (this.sourceBuffer = value));
-        return { sourceText, koreanText: sourceText };
+        return {
+          sourceText,
+          koreanText: this.sourceLanguage === "ko" ? sourceText : sourceText,
+          targetLanguage: this.targetLanguage,
+          translatedText: sourceText,
+        };
       }
       return null;
     }
 
-    if (isOutputTranscript(event.rawType) && this.targetLanguage === "ko") {
-      this.koreanBuffer = appendTranscriptDelta(this.koreanBuffer, event.text);
-      if (shouldFlushTranscript(this.koreanBuffer)) {
-        const koreanText = consumeText(() => this.koreanBuffer, (value) => (this.koreanBuffer = value));
+    if (isOutputTranscript(event.rawType)) {
+      this.outputBuffer = appendTranscriptDelta(this.outputBuffer, event.text);
+      if (shouldFlushTranscript(this.outputBuffer)) {
+        const translatedText = consumeText(() => this.outputBuffer, (value) => (this.outputBuffer = value));
         const sourceText =
           consumeText(() => this.sourceBuffer, (value) => (this.sourceBuffer = value)) ||
           `[${this.sourceLanguage} source audio]`;
-        return { sourceText, koreanText };
+        return {
+          sourceText,
+          koreanText: this.targetLanguage === "ko" ? translatedText : this.sourceLanguage === "ko" ? sourceText : sourceText,
+          targetLanguage: this.targetLanguage,
+          translatedText,
+        };
       }
     }
 

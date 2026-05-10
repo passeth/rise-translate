@@ -34,7 +34,8 @@ export async function persistServerTranscriptSegment({
     is_final: false,
     metadata: {
       serverCaptured: true,
-      targetLanguage: request.targetLanguage,
+      targetLanguage: segment.targetLanguage,
+      translatedText: segment.translatedText,
       translationSessionId: request.sessionId,
     },
   });
