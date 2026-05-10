@@ -75,4 +75,5 @@ describe("Realtime Translation config", () => {
 
     expect(body.session.audio.input.transcription.model).toBe("custom-transcribe-model");
   });
+
 });

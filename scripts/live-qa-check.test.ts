@@ -51,7 +51,7 @@ describe("live QA evidence checklist", () => {
         .replace("| Translation | ok | ☑ Pass ☐ Fail | evidence |", "| Translation | ok | ☐ Pass ☑ Fail | broken |")
         .replace("- ☑ Ready for internal buyer pilot", "- ☐ Ready for internal buyer pilot")
         .replace("- ☐ Not ready — blocker list below", "- ☑ Not ready — blocker list below")
-        .replace("1. ", "1. Translation failed"),
+        .replace("1.", "1. Translation failed"),
     );
 
     expect(summary.failedRows).toContain("Translation");

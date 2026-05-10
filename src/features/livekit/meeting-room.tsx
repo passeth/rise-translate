@@ -4,10 +4,11 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ControlBar,
-  GridLayout,
   LiveKitRoom,
   ParticipantTile,
   RoomAudioRenderer,
+  TrackLoop,
+  type TrackReferenceOrPlaceholder,
   useParticipants,
   useRoomContext,
   useTracks,
@@ -21,7 +22,11 @@ import { hasActiveBrowserTranslationMix, resolveRoomAudioVolume } from "@/featur
 import { useRemoteTranslation, type RealtimeTranslationStatus } from "@/features/livekit/realtime-translation";
 import { getTranscriptDelta, shouldPersistTranscriptChunk } from "@/features/livekit/transcript-buffer";
 import { TRANSLATION_TRACK_PREFIX, getTranslationTrackName } from "@/features/translation/config";
-import { groupTracksForScreenShareLayout, shouldUseScreenShareStage } from "@/features/livekit/screen-share-layout";
+import {
+  groupTracksForScreenShareLayout,
+  resolveParticipantGridLayout,
+  shouldUseScreenShareStage,
+} from "@/features/livekit/screen-share-layout";
 
 type LiveKitTokenResponse = {
   token: string;
@@ -169,13 +174,14 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
   const room = useRoomContext();
   const tracks = useTracks(
     [
-      { source: Track.Source.Camera, withPlaceholder: false },
+      { source: Track.Source.Camera, withPlaceholder: true },
       { source: Track.Source.ScreenShare, withPlaceholder: false },
     ],
     { onlySubscribed: false },
   );
-  const { screenShareTracks, cameraTracks } = useMemo(() => groupTracksForScreenShareLayout(tracks), [tracks]);
-  const useScreenShareStage = useMemo(() => shouldUseScreenShareStage(tracks), [tracks]);
+  const visibleTracks = useMemo(() => tracks.filter((track) => !parseTranslationWorkerMetadata(track.participant.metadata)), [tracks]);
+  const { screenShareTracks, cameraTracks } = useMemo(() => groupTracksForScreenShareLayout(visibleTracks), [visibleTracks]);
+  const useScreenShareStage = useMemo(() => shouldUseScreenShareStage(visibleTracks), [visibleTracks]);
   const participants = useParticipants();
   const [refreshKey, setRefreshKey] = useState(0);
   const [screenShareError, setScreenShareError] = useState<string | null>(null);
@@ -445,26 +451,30 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
           </div>
         ) : null}
         {useScreenShareStage ? (
-          <div className="flex h-[calc(100vh-180px)] min-h-0 flex-col gap-3 rounded-3xl bg-slate-950/70">
-            <GridLayout
+          <div className="grid h-[calc(100vh-180px)] min-h-[520px] grid-rows-[4fr_1fr] gap-3 rounded-3xl bg-slate-950/70 lg:grid-cols-[4fr_1fr] lg:grid-rows-1">
+            <ParticipantTrackGrid
               tracks={screenShareTracks}
-              className="min-h-0 basis-4/5 overflow-hidden rounded-3xl bg-slate-900 p-2 ring-1 ring-cyan-300/30"
-            >
-              <ParticipantTile />
-            </GridLayout>
+              label="Shared screen"
+              className="min-h-0 overflow-hidden rounded-3xl bg-slate-900 p-2 ring-1 ring-cyan-300/30"
+              tileClassName="min-h-0"
+            />
             {cameraTracks.length > 0 ? (
-              <GridLayout
+              <ParticipantTrackGrid
                 tracks={cameraTracks}
-                className="min-h-[112px] basis-1/5 overflow-hidden rounded-2xl bg-slate-900/80 p-2"
-              >
-                <ParticipantTile />
-              </GridLayout>
+                label="Participants"
+                compact
+                className="min-h-0 overflow-hidden rounded-2xl bg-slate-900/80 p-2"
+                tileClassName="min-h-[96px]"
+              />
             ) : null}
           </div>
         ) : (
-          <GridLayout tracks={tracks} className="h-[calc(100vh-180px)] rounded-3xl bg-slate-900 p-2">
-            <ParticipantTile />
-          </GridLayout>
+          <ParticipantTrackGrid
+            tracks={cameraTracks}
+            label="Participants"
+            className="h-[calc(100vh-180px)] min-h-[420px] rounded-3xl bg-slate-900 p-3"
+            tileClassName="min-h-[180px]"
+          />
         )}
       </section>
 
@@ -538,6 +548,40 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
         volume={roomAudioVolume}
       />
     </main>
+  );
+}
+
+function ParticipantTrackGrid({
+  tracks,
+  label,
+  compact = false,
+  className,
+  tileClassName,
+}: {
+  tracks: TrackReferenceOrPlaceholder[];
+  label: string;
+  compact?: boolean;
+  className: string;
+  tileClassName?: string;
+}) {
+  const layout = resolveParticipantGridLayout(tracks.length, { compact });
+
+  return (
+    <div className={className} aria-label={label}>
+      <div
+        className={`grid place-content-center gap-3 ${compact ? "overflow-y-auto" : "h-full"}`}
+        style={{
+          gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+          width: layout.width,
+          height: layout.height,
+          margin: "0 auto",
+        }}
+      >
+        <TrackLoop tracks={tracks}>
+          <ParticipantTile className={`overflow-hidden rounded-2xl bg-slate-950 ${tileClassName ?? ""}`} />
+        </TrackLoop>
+      </div>
+    </div>
   );
 }
 
