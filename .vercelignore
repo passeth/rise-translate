@@ -1,0 +1,21 @@
+# dependencies and build outputs
+node_modules
+.next
+out
+build
+coverage
+
+# local secrets and machine state
+.env
+.env.*
+*.pem
+.DS_Store
+
+# local agent/runtime state may contain credentials or meeting traces
+.omx/logs
+.omx/state
+.omx/metrics.json
+.omx/session-history.jsonl
+.scratch/**/qa/*.local.*
+
+docs/api

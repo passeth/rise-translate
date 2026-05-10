@@ -1,0 +1,13 @@
+.env
+.env.*
+.next
+.omx
+.scratch
+coverage
+docs/api
+node_modules
+npm-debug.log*
+pnpm-debug.log*
+tsconfig.tsbuildinfo
+yarn-debug.log*
+yarn-error.log*
