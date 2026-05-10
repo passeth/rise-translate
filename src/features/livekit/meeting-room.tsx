@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  AudioTrack,
   ControlBar,
   LiveKitRoom,
   ParticipantTile,
-  RoomAudioRenderer,
   TrackLoop,
   type TrackReferenceOrPlaceholder,
   useParticipants,
@@ -20,7 +20,7 @@ import { getOperationalStatusTone, resolveCaptionConnectionStatus } from "@/feat
 import { SUPPORTED_LANGUAGES, isSupportedLanguage, type SupportedLanguageCode } from "@/lib/languages";
 import {
   hasActiveBrowserTranslationMix,
-  resolveRoomAudioVolume,
+  resolveTrackAudioVolume,
   shouldRunBrowserTranslationFallback,
 } from "@/features/livekit/room-audio-mix";
 import { useRemoteTranslation, type RealtimeTranslationStatus } from "@/features/livekit/realtime-translation";
@@ -294,15 +294,15 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
     }
 
     for (const participant of room.remoteParticipants.values()) {
-      const participantSpeakingLanguage = resolveMetadataLanguage(participant.metadata, "speakingLanguage", "ko");
       for (const publication of participant.trackPublications.values()) {
         if (publication.kind !== Track.Kind.Audio || publication.trackName?.startsWith(`${TRANSLATION_TRACK_PREFIX}-`)) {
           continue;
         }
 
-        const shouldHearOriginal =
-          !translatedSourceIdentities.has(participant.identity) || participantSpeakingLanguage === listeningLanguage;
-        publication.setSubscribed(shouldHearOriginal);
+        // Keep source audio subscribed even when an interpretation track exists.
+        // The custom audio renderer ducks this original track to the Source volume,
+        // so listeners hear context softly behind the interpreter instead of losing it.
+        publication.setSubscribed(true);
       }
     }
   }, [listeningLanguage, refreshKey, room]);
@@ -332,19 +332,10 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
 
     return identities;
   }, [listeningLanguage, refreshKey, room]);
-  const serverTranslationTrackActive = useMemo(() => {
-    return serverTranslatedSourceIdentities.size > 0;
-  }, [serverTranslatedSourceIdentities]);
   const browserTranslationMixActive = useMemo(
     () => hasActiveBrowserTranslationMix(Object.values(translationSnapshots)),
     [translationSnapshots],
   );
-  const roomAudioVolume = resolveRoomAudioVolume({
-    serverTranslationTrackActive,
-    browserTranslationMixActive,
-    translatedAudioVolume,
-    sourceAudioVolume,
-  });
 
   async function toggleMicrophone() {
     setMicrophoneError(null);
@@ -553,11 +544,72 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
         ) : null}
         <ControlBar controls={{ screenShare: false }} />
       </footer>
-      <RoomAudioRenderer
+      <MixedRoomAudioRenderer
         muted={audioMuted}
-        volume={roomAudioVolume}
+        listeningLanguage={listeningLanguage}
+        sourceAudioVolume={sourceAudioVolume}
+        translatedAudioVolume={translatedAudioVolume}
+        serverTranslatedSourceIdentities={serverTranslatedSourceIdentities}
+        browserTranslationMixActive={browserTranslationMixActive}
       />
     </main>
+  );
+}
+
+function MixedRoomAudioRenderer({
+  muted,
+  listeningLanguage,
+  sourceAudioVolume,
+  translatedAudioVolume,
+  serverTranslatedSourceIdentities,
+  browserTranslationMixActive,
+}: {
+  muted: boolean;
+  listeningLanguage: SupportedLanguageCode;
+  sourceAudioVolume: number;
+  translatedAudioVolume: number;
+  serverTranslatedSourceIdentities: Set<string>;
+  browserTranslationMixActive: boolean;
+}) {
+  const audioTracks = useTracks(
+    [Track.Source.Microphone, Track.Source.ScreenShareAudio, Track.Source.Unknown],
+    { updateOnlyOn: [], onlySubscribed: true },
+  ).filter((trackRef) => !trackRef.participant.isLocal && trackRef.publication.kind === Track.Kind.Audio);
+
+  return (
+    <div style={{ display: "none" }}>
+      {audioTracks.map((trackRef) => {
+        const trackName = trackRef.publication.trackName;
+        const translationTrack = Boolean(trackName?.startsWith(`${TRANSLATION_TRACK_PREFIX}-`));
+        const workerMetadata = parseTranslationWorkerMetadata(trackRef.participant.metadata);
+        const sourceIdentity = translationTrack ? workerMetadata?.sourceIdentity : trackRef.participant.identity;
+        const sourceLanguage = translationTrack
+          ? null
+          : resolveMetadataLanguage(trackRef.participant.metadata, "speakingLanguage", "ko");
+        const originalSourceActivelyInterpreted = Boolean(
+          !translationTrack &&
+            sourceIdentity &&
+            serverTranslatedSourceIdentities.has(sourceIdentity) &&
+            sourceLanguage !== listeningLanguage,
+        );
+        const volume = resolveTrackAudioVolume({
+          translationTrack,
+          originalSourceActivelyInterpreted,
+          browserTranslationMixActive,
+          translatedAudioVolume,
+          sourceAudioVolume,
+        });
+
+        return (
+          <AudioTrack
+            key={`${trackRef.participant.identity}-${trackRef.publication.trackSid ?? trackName ?? trackRef.source}`}
+            trackRef={trackRef}
+            muted={muted}
+            volume={volume}
+          />
+        );
+      })}
+    </div>
   );
 }
 

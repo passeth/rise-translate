@@ -28,6 +28,24 @@ export function shouldRunBrowserTranslationFallback({
   return !serverTranslatedSourceActive;
 }
 
+export function resolveTrackAudioVolume({
+  translationTrack,
+  originalSourceActivelyInterpreted,
+  browserTranslationMixActive,
+  translatedAudioVolume,
+  sourceAudioVolume,
+}: {
+  translationTrack: boolean;
+  originalSourceActivelyInterpreted: boolean;
+  browserTranslationMixActive: boolean;
+  translatedAudioVolume: number;
+  sourceAudioVolume: number;
+}) {
+  if (translationTrack) return translatedAudioVolume;
+  if (originalSourceActivelyInterpreted || browserTranslationMixActive) return sourceAudioVolume;
+  return 1;
+}
+
 export function resolveRoomAudioVolume({
   serverTranslationTrackActive,
   browserTranslationMixActive,
