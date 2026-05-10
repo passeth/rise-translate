@@ -22,6 +22,7 @@ export function shouldUseScreenShareStage<T extends TrackSourceLike>(tracks: T[]
 
 export type ParticipantGridLayout = {
   columns: number;
+  rows: number;
   compact: boolean;
   width: string;
   height: string;
@@ -34,6 +35,7 @@ export function resolveParticipantGridLayout(trackCount: number, options: { comp
   if (compact) {
     return {
       columns: 1,
+      rows: safeCount,
       compact: true,
       width: "100%",
       height: "100%",
@@ -41,11 +43,13 @@ export function resolveParticipantGridLayout(trackCount: number, options: { comp
   }
 
   const columns = safeCount <= 1 ? 1 : safeCount <= 4 ? 2 : safeCount <= 9 ? 3 : 4;
+  const rows = Math.ceil(safeCount / columns);
 
   return {
     columns,
+    rows,
     compact: false,
-    width: safeCount <= 1 ? "min(100%, 720px)" : "100%",
-    height: safeCount <= 1 ? "min(100%, 440px)" : "100%",
+    width: "100%",
+    height: "100%",
   };
 }

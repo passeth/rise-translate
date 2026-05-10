@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasActiveBrowserTranslationMix, resolveRoomAudioVolume } from "./room-audio-mix";
+import { hasActiveBrowserTranslationMix, resolveRoomAudioVolume, shouldRunBrowserTranslationFallback } from "./room-audio-mix";
 
 describe("room audio mix policy", () => {
   it("keeps original audio at full volume until an actual translation mix is active", () => {
@@ -33,6 +33,33 @@ describe("room audio mix policy", () => {
         sourceAudioVolume: 0.2,
       }),
     ).toBe(0.9);
+  });
+
+
+  it("disables browser fallback when the server bridge is the preferred interpreter path", () => {
+    expect(
+      shouldRunBrowserTranslationFallback({
+        enabled: true,
+        serverBridgePreferred: true,
+        serverTranslatedSourceActive: false,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldRunBrowserTranslationFallback({
+        enabled: true,
+        serverBridgePreferred: false,
+        serverTranslatedSourceActive: false,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldRunBrowserTranslationFallback({
+        enabled: true,
+        serverBridgePreferred: false,
+        serverTranslatedSourceActive: true,
+      }),
+    ).toBe(false);
   });
 
   it("detects only different-language active browser translation snapshots", () => {

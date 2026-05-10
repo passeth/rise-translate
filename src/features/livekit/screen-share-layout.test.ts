@@ -26,25 +26,30 @@ describe("screen share meeting layout", () => {
     expect(shouldUseScreenShareStage(tracks)).toBe(false);
   });
 
-  it("caps a single participant tile instead of stretching it full screen", () => {
+  it("fills the stage for one participant", () => {
     expect(resolveParticipantGridLayout(1)).toEqual({
       columns: 1,
+      rows: 1,
       compact: false,
-      width: "min(100%, 720px)",
-      height: "min(100%, 440px)",
+      width: "100%",
+      height: "100%",
     });
   });
 
   it("uses meeting-style split grids as participant count grows", () => {
-    expect(resolveParticipantGridLayout(2).columns).toBe(2);
-    expect(resolveParticipantGridLayout(4).columns).toBe(2);
-    expect(resolveParticipantGridLayout(5).columns).toBe(3);
-    expect(resolveParticipantGridLayout(10).columns).toBe(4);
+    expect(resolveParticipantGridLayout(2)).toMatchObject({ columns: 2, rows: 1 });
+    expect(resolveParticipantGridLayout(3)).toMatchObject({ columns: 2, rows: 2 });
+    expect(resolveParticipantGridLayout(4)).toMatchObject({ columns: 2, rows: 2 });
+    expect(resolveParticipantGridLayout(5)).toMatchObject({ columns: 3, rows: 2 });
+    expect(resolveParticipantGridLayout(6)).toMatchObject({ columns: 3, rows: 2 });
+    expect(resolveParticipantGridLayout(7)).toMatchObject({ columns: 3, rows: 3 });
+    expect(resolveParticipantGridLayout(9)).toMatchObject({ columns: 3, rows: 3 });
   });
 
   it("uses one compact column for the screen-share participant strip", () => {
     expect(resolveParticipantGridLayout(6, { compact: true })).toEqual({
       columns: 1,
+      rows: 6,
       compact: true,
       width: "100%",
       height: "100%",

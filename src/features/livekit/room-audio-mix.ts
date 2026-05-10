@@ -14,6 +14,20 @@ export function hasActiveBrowserTranslationMix(snapshots: RoomAudioMixSnapshot[]
   );
 }
 
+export function shouldRunBrowserTranslationFallback({
+  enabled,
+  serverBridgePreferred,
+  serverTranslatedSourceActive,
+}: {
+  enabled: boolean;
+  serverBridgePreferred: boolean;
+  serverTranslatedSourceActive: boolean;
+}) {
+  if (!enabled) return false;
+  if (serverBridgePreferred) return false;
+  return !serverTranslatedSourceActive;
+}
+
 export function resolveRoomAudioVolume({
   serverTranslationTrackActive,
   browserTranslationMixActive,

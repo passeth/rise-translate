@@ -18,7 +18,11 @@ import { RoomEvent, Track, type Participant } from "livekit-client";
 import { CAPTION_FONT_SIZE_CLASS, type CaptionEvent, type CaptionFontSize } from "@/features/captions/caption-events";
 import { getOperationalStatusTone, resolveCaptionConnectionStatus } from "@/features/livekit/operational-status";
 import { SUPPORTED_LANGUAGES, isSupportedLanguage, type SupportedLanguageCode } from "@/lib/languages";
-import { hasActiveBrowserTranslationMix, resolveRoomAudioVolume } from "@/features/livekit/room-audio-mix";
+import {
+  hasActiveBrowserTranslationMix,
+  resolveRoomAudioVolume,
+  shouldRunBrowserTranslationFallback,
+} from "@/features/livekit/room-audio-mix";
 import { useRemoteTranslation, type RealtimeTranslationStatus } from "@/features/livekit/realtime-translation";
 import { getTranscriptDelta, shouldPersistTranscriptChunk } from "@/features/livekit/transcript-buffer";
 import { TRANSLATION_TRACK_PREFIX, getTranslationTrackName } from "@/features/translation/config";
@@ -99,6 +103,11 @@ type InRoomTranslationStatusPayload = {
 };
 
 const ACTIVE_SERVER_TRANSLATION_STATUSES = new Set(["starting", "connected", "reconnecting"]);
+// Keep interpretation audio on the server bridge only. The browser fallback opens
+// separate Realtime sessions per listener and can produce a different voice than
+// the server-published interpretation track, which sounds like the interpreter
+// voice changes mid-meeting.
+const SERVER_BRIDGE_TRANSLATION_AUDIO_ONLY = true;
 
 export function MeetingRoom({ publicToken }: { publicToken: string }) {
   const [connection, setConnection] = useState<LiveKitTokenResponse | null>(null);
@@ -505,6 +514,7 @@ function MeetingWorkspace({ publicToken }: { publicToken: string }) {
         publicToken={publicToken}
         enabled={translationEnabled}
         targetLanguage={listeningLanguage}
+        serverBridgePreferred={SERVER_BRIDGE_TRANSLATION_AUDIO_ONLY}
         serverTranslatedSourceIdentities={serverTranslatedSourceIdentities}
         translatedVolume={audioMuted ? 0 : translatedAudioVolume}
         onSnapshot={updateTranslationSnapshot}
@@ -572,6 +582,7 @@ function ParticipantTrackGrid({
         className={`grid place-content-center gap-3 ${compact ? "overflow-y-auto" : "h-full"}`}
         style={{
           gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
           width: layout.width,
           height: layout.height,
           margin: "0 auto",
@@ -589,6 +600,7 @@ function ParticipantTranslationLayer({
   publicToken,
   enabled,
   targetLanguage,
+  serverBridgePreferred,
   serverTranslatedSourceIdentities,
   translatedVolume,
   onSnapshot,
@@ -597,6 +609,7 @@ function ParticipantTranslationLayer({
   publicToken: string;
   enabled: boolean;
   targetLanguage: SupportedLanguageCode;
+  serverBridgePreferred: boolean;
   serverTranslatedSourceIdentities: Set<string>;
   translatedVolume: number;
   onSnapshot: (snapshot: ParticipantTranslationSnapshot) => void;
@@ -610,7 +623,13 @@ function ParticipantTranslationLayer({
       {participants
         .filter((participant) => participant.identity !== room.localParticipant.identity)
         .filter((participant) => !parseTranslationWorkerMetadata(participant.metadata))
-        .filter((participant) => !serverTranslatedSourceIdentities.has(participant.identity))
+        .filter((participant) =>
+          shouldRunBrowserTranslationFallback({
+            enabled,
+            serverBridgePreferred,
+            serverTranslatedSourceActive: serverTranslatedSourceIdentities.has(participant.identity),
+          }),
+        )
         .map((participant) => (
           <ParticipantTranslationBridge
             key={`${participant.identity}-${targetLanguage}-${enabled ? "on" : "off"}`}
@@ -1147,12 +1166,12 @@ function TranslationControlPanel({
           : "border-amber-300/30 bg-amber-300/10 text-amber-50"
       }`}>
         <p className={`font-semibold ${serverTranslatedSourceIdentities.size > 0 ? "text-emerald-100" : "text-amber-100"}`}>
-          {serverTranslatedSourceIdentities.size > 0 ? "Server interpretation active" : "Pilot translation mode"}
+          {serverTranslatedSourceIdentities.size > 0 ? "Server interpretation active" : "Server interpretation pending"}
         </p>
         <p className="mt-2 leading-6 text-amber-50/80">
           {serverTranslatedSourceIdentities.size > 0
             ? "A server-published interpretation track is available for your listening language. The room will prioritize that audio and suppress duplicate browser fallback for the same speaker."
-            : "This room currently uses the browser translation fallback until server interpretation tracks appear. For best reliability, keep this page open, speak one at a time, and use headphones when possible."}
+            : "This room uses the server interpretation path only, so listeners do not hear mixed browser/server interpreter voices. Start server interpretation for each speaker from Host server interpretation."}
         </p>
       </section>
 
